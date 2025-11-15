@@ -3,11 +3,11 @@ import argparse
 import zipfile
 import random
 
-defaultDir = "/mnt/Database\ Storage/http/capstone"
+defaultDir = "/mnt/Database Storage/http/capstone"
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="Capstone file sampler",
+        prog="python3 sampleFiles.py",
         description="Selects files randomly from our capstone's dataset",
         epilog="Copyright Liam Hillery, 2025"
     )

@@ -11,12 +11,11 @@ defaultDir = "/mnt/Database Storage/http/capstone"
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="Capstone file sampler",
-        description="Selects files randomly from our capstone's dataset",
+        prog="python3 matchFiles.py",
+        description="Detects discrepancies between LoC documents at each stage of processing",
         epilog="Copyright Liam Hillery, 2025"
     )
 
-    parser.add_argument("count", nargs="?", default=20)
     parser.add_argument(
         "-d",
         "--document-dir",
