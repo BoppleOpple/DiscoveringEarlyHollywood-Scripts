@@ -1,2 +1,4 @@
 PyPDF2 # PDF parsing
 tqdm   # Progress bars
+pdf2image
+matplotlib
