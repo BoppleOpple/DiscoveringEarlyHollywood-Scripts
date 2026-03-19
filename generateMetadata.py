@@ -5,27 +5,24 @@ import re
 from pathlib import Path
 from tqdm import tqdm
 from pprint import pprint
-from ollama import Client, chat, ChatResponse
+from ollama import Client, generate, create, GenerateResponse
+from typing import Literal
+from pydantic import BaseModel
 
 defaultDir = "/mnt/Database Storage/http/capstone"
 
 SYSTEM_PROMPT = """
 Your goal is to extract **exact smippets** from documents in various categories, and to store them
-in a JSON object. For each field, follow the provided schema exactly. JSON responses should be of
-the form ```json
-{
-    "title": <str | null>,
-    "reels": <int | null>,
-    "author": <str | null>,
-    "dicrctor": <str | null>,
-    "studio": <str | null>,
-    "serial": <bool>,
-    "genres": [
-        <"action" | "comedy" | "drama" | "horror" | "science fiction" | "nonfiction" | "documentary">
-    ],
-    "actors": [ <str> ],
-}
-```
+in a JSON object. For each field, follow the provided schema exactly:
+
+- title: The title of the film described in the document (or null)
+- reels: The number of reels described in the document (or null)
+- author: The author of the film (or null)
+- director: The director of the film (or null)
+- studio: The studio responsible for the film (or null)
+- series: The name of the series the film is a part of (or null)
+- genres: The list of genres that apply to the film
+- actors: The list of all **actors** (NOT characters) who act in this film
 """
 
 
@@ -76,6 +73,17 @@ parser.add_argument(
     default="http://localhost:11434",
     type=str,
 )
+
+class MetadataObject (BaseModel):
+    title: str | None
+    reels: int | None
+    author: str | None
+    dicrctor: str | None
+    studio: str | None
+    series: str | None
+    genres: list[Literal["action", "comedy", "drama", "horror", "science fiction", "nonfiction", "documentary"]]
+    actors: list[str]
+
 
 def match_transcript(fname: str) -> re.Match | None:
     return re.fullmatch(r"(\w\d{4}\w\d{5})_p(\d+)\.txt", fname)
@@ -148,6 +156,11 @@ def main():
     args = parser.parse_args()
     
     _ollama_client = Client(host=args.ollama_host)
+    create(
+        model="metadataModel",
+        from_=args.model,
+        system=SYSTEM_PROMPT
+    )
 
     # fetch the relevant transcripts
     transcripts: dict[str, list[str]] = get_transcripts(args)
@@ -160,31 +173,23 @@ def main():
     for id, page_text in tqdm(transcripts.items()):
         failed: bool = True
         for i in range(args.retries):
-            response: ChatResponse = chat(
-                model=args.model,
-                messages=[
-                        {
-                        "role": "system",
-                        "content": SYSTEM_PROMPT,
-                        },
-                        {
-                            "role": "user",
-                            "content": "\n".join(page_text)
-                        }
-                    ],
+            response: GenerateResponse = generate(
+                model="metadataModel",
+                prompt="\n".join(page_text),
                 stream=False,
-                logprobs=True,
-                think=False
+                logprobs=False,
+                think=False,
+                format=MetadataObject.model_json_schema()
             )
 
             with open(args.outdir / f"{id}.json", "w") as f:
-                if not response.message.content:
+                if not response.response:
                     print(f"no response! retrying... ({i+1})")
                     continue
 
                 failed = False
-                print(response.message.content)
-                print(response.message.content, file=f)
+                print(response.response)
+                print(response.response, file=f)
             
             break
 
