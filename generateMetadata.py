@@ -5,24 +5,82 @@ import re
 from pathlib import Path
 from tqdm import tqdm
 from pprint import pprint
-from ollama import Client, generate, create, GenerateResponse
+from ollama import Client, generate, create, delete, GenerateResponse
 from typing import Literal
 from pydantic import BaseModel
 
 defaultDir = "/mnt/Database Storage/http/capstone"
 
-SYSTEM_PROMPT = """
-Your goal is to extract **exact smippets** from documents in various categories, and to store them
-in a JSON object. For each field, follow the provided schema exactly:
+PAGE_PROMPT = """
+Your goal is to extract **exact snippets** the provided page of a document, and to store them
+in a JSON object. If you are unsure of the accuracy of your results, err on the side of returning
+"null" than returning inaccurate information. You will summarize this page along the following
+criteria and ONLY the following criteria:
 
-- title: The title of the film described in the document (or null)
-- reels: The number of reels described in the document (or null)
-- author: The author of the film (or null)
-- director: The director of the film (or null)
-- studio: The studio responsible for the film (or null)
-- series: The name of the series the film is a part of (or null)
-- genres: The list of genres that apply to the film
-- actors: The list of all **actors** (NOT characters) who act in this film
+- title: The title of the film described in the document. If unclear or unstated, this section
+should be null.
+- reels: The number of reels described in the document. If unclear or unstated, this section should
+be null.
+- author: The author of the film. If unclear or unstated, this section should be null.
+- director: The director of the film. If unclear or unstated, this section should be null.
+- studio: The studio responsible for the film. If unclear or unstated, this section should be
+null.
+- series: The name of the series the film is a part of. If unclear or unstated, this section should
+be null.
+- genres: The list of genres that apply to the film. If unclear or unstated, this section should be
+null.
+- actors: The list of all actors who act in this film. There is a difference between an actor ana a
+character. This list should ONLY include the names of real people who play the role of their
+respective characters in this film. DO NOT UNDER ANY CIRCUMSTANCES name a character instead of an
+actor. If unclear or unstated, this section should be null.
+"""
+
+COALTION_PROMPT = """
+You are processing historical film data for a team to review at a later date. I have read through
+the transcript of a film or film review page-by-page, and have summarized each on the following
+criteria:
+
+- title: The title of the film described in the document. If unclear or unstated, this section
+should be null.
+- reels: The number of reels described in the document. If unclear or unstated, this section should
+be null.
+- author: The author of the film. If unclear or unstated, this section should be null.
+- director: The director of the film. If unclear or unstated, this section should be null.
+- studio: The studio responsible for the film. If unclear or unstated, this section should be
+null.
+- series: The name of the series the film is a part of. If unclear or unstated, this section should
+be null.
+- genres: The list of genres that apply to the film. If unclear or unstated, this section should be
+null.
+- actors: The list of all unique actors who act in this film. If unclear or unstated,
+this section should be null.
+
+Your job is to coalesce these summaries into a JSON file contianing information about the film as a
+whole. The worst case scenario is including information that is incorrect, so follow the below
+schema with no additional discussion and return "null" (or an empty list where applicable) if any
+information is unclear:
+
+{
+    "title": String | null
+    "reels": int | null
+    "author": String | null
+    "dicrctor": String | null
+    "studio": String | null
+    "series": String | null
+    "genres": UniqueArray[
+        "action" |
+        "comedy" |
+        "drama" |
+        "horror" |
+        "science fiction" |
+        "nonfiction" |
+        "documentary"
+    ]
+    "actors": UniqueArray[String]
+}
+
+This task does not involve including all information from each page individually, but rather
+drawing information from multiple summaries at once.
 """
 
 
@@ -46,6 +104,8 @@ parser.add_argument(
     default=f"{defaultDir}/qwen_ocr",
     type=Path,
 )
+
+# largest document is s1229l11579 (216 pages)
 parser.add_argument(
     "-i",
     "--id",
@@ -151,15 +211,29 @@ def get_transcripts(args: argparse.Namespace) -> dict[str, list[str]]:
 
     return transcripts
 
+def log_output(response: GenerateResponse):
+    print("RESPONSE:")
+    print(response.response)
+
+    print()
+    print(f"USED CONTEXT: {len(response.context)}")
+
 
 def main():
     args = parser.parse_args()
     
     _ollama_client = Client(host=args.ollama_host)
+
     create(
-        model="metadataModel",
+        model="pageSummarizationModel",
         from_=args.model,
-        system=SYSTEM_PROMPT
+        system=PAGE_PROMPT
+    )
+
+    create(
+        model="pageCoalitionModel",
+        from_=args.model,
+        system=COALTION_PROMPT
     )
 
     # fetch the relevant transcripts
@@ -169,33 +243,57 @@ def main():
 
     # create output directory
     os.makedirs(args.outdir, exist_ok=True)
+    
+    summaries: dict[str, list[str]] = {}
 
-    for id, page_text in tqdm(transcripts.items()):
+    for id, transcript in tqdm(transcripts.items(), desc="Summaries"):
+        summaries[id] = []
+
+        # summarize each page to save on context
+        for page in tqdm(transcript, desc="Progress on transcript"):
+            page_response: GenerateResponse = generate(
+                model="pageSummarizationModel",
+                prompt=page,
+                stream=False,
+                logprobs=False,
+                think=False
+            )
+            log_output(page_response)
+
+            summaries[id].append(page_response.response)
+
+    for id, transcript in tqdm(transcripts.items(), desc="Postprocessing"):
         failed: bool = True
         for i in range(args.retries):
-            response: GenerateResponse = generate(
-                model="metadataModel",
-                prompt="\n".join(page_text),
+            
+            coalition_response: GenerateResponse = generate(
+                model="pageCoalitionModel",
+                prompt="\n---NEXT PAGE---\n".join(summaries[id]),
                 stream=False,
                 logprobs=False,
                 think=False,
                 format=MetadataObject.model_json_schema()
             )
 
+
             with open(args.outdir / f"{id}.json", "w") as f:
-                if not response.response:
+                if not coalition_response.response:
                     print(f"no response! retrying... ({i+1})")
                     continue
 
                 failed = False
-                print(response.response)
-                print(response.response, file=f)
+
+                log_output(coalition_response)
+                print(coalition_response.response, file=f)
             
             break
 
         if failed:
             with open(args.outdir / f"failed_docs.txt", "a") as f:
                 print(id, file=f)
+    
+    delete("pageSummarizationModel")
+    delete("pageCoalitionModel")
 
 
 if __name__ == "__main__":
