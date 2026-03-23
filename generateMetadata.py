@@ -2,11 +2,14 @@ import os
 import argparse
 import random
 import re
+import json
+
 from pathlib import Path
+from typing import Any
 from tqdm import tqdm
 from pprint import pprint
 from ollama import Client, generate, create, delete, GenerateResponse
-from typing import Literal
+from typing import Literal, cast
 from pydantic import BaseModel
 
 defaultDir = "/mnt/Database Storage/http/capstone"
@@ -33,12 +36,16 @@ null.
 character. This list should ONLY include the names of real people who play the role of their
 respective characters in this film. DO NOT UNDER ANY CIRCUMSTANCES name a character instead of an
 actor. If unclear or unstated, this section should be null.
+
+The user will provide a transcript and a JSON summarizing the content of the previous pages. Update
+this JSON with information from the current page, if applicable. Respond with the updated JSON
+file, and be careful to maintain proper JSON syntax.
 """
 
-COALTION_PROMPT = """
-You are processing historical film data for a team to review at a later date. I have read through
-the transcript of a film or film review page-by-page, and have summarized each on the following
-criteria:
+DECISION_PROMPT = """
+You are working as part of a team to exctact correct information about films from the files used to
+copyright them. The user has already collected information from each page of the document, but some
+of it is conflicting. The information collected includes:
 
 - title: The title of the film described in the document. If unclear or unstated, this section
 should be null.
@@ -52,37 +59,31 @@ null.
 be null.
 - genres: The list of genres that apply to the film. If unclear or unstated, this section should be
 null.
-- actors: The list of all unique actors who act in this film. If unclear or unstated,
-this section should be null.
+- actors: The list of all actors who act in this film. There is a difference between an actor ana a
+character. This list should ONLY include the names of real people who play the role of their
+respective characters in this film. DO NOT UNDER ANY CIRCUMSTANCES name a character instead of an
+actor. If unclear or unstated, this section should be null.
 
-Your job is to coalesce these summaries into a JSON file contianing information about the film as a
-whole. The worst case scenario is including information that is incorrect, so follow the below
-schema with no additional discussion and return "null" (or an empty list where applicable) if any
-information is unclear:
+The user will provide the section upon which two summaries disagree, the relevant pages, and the
+proposed results from each section. Using the content of each of these pages, determing the most
+correct value for the provided category. Reply in the following format:
 
 {
-    "title": String | null
-    "reels": int | null
-    "author": String | null
-    "dicrctor": String | null
-    "studio": String | null
-    "series": String | null
-    "genres": UniqueArray[
-        "action" |
-        "comedy" |
-        "drama" |
-        "horror" |
-        "science fiction" |
-        "nonfiction" |
-        "documentary"
-    ]
-    "actors": UniqueArray[String]
+    "response": <value>
 }
-
-This task does not involve including all information from each page individually, but rather
-drawing information from multiple summaries at once.
 """
 
+
+EMPTY_SUMMARY: dict = {
+    "title": None,
+    "reels": None,
+    "author": None,
+    "director": None,
+    "studio": None,
+    "series": None,
+    "genres": [],
+    "actors": []
+}
 
 parser = argparse.ArgumentParser(
     prog="python3 generateMetadata.py",
@@ -138,7 +139,7 @@ class MetadataObject (BaseModel):
     title: str | None
     reels: int | None
     author: str | None
-    dicrctor: str | None
+    director: str | None
     studio: str | None
     series: str | None
     genres: list[Literal["action", "comedy", "drama", "horror", "science fiction", "nonfiction", "documentary"]]
@@ -231,9 +232,9 @@ def main():
     )
 
     create(
-        model="pageCoalitionModel",
+        model="dataDecisionModel",
         from_=args.model,
-        system=COALTION_PROMPT
+        system=DECISION_PROMPT
     )
 
     # fetch the relevant transcripts
@@ -244,7 +245,7 @@ def main():
     # create output directory
     os.makedirs(args.outdir, exist_ok=True)
     
-    summaries: dict[str, list[str]] = {}
+    summaries: dict[str, dict] = {}
 
     """
     I'm kind of running out of simple solutions here, but one really in-depth solution could be to
@@ -254,55 +255,102 @@ def main():
     most correct with the content of each page.
     """
 
-    for id, transcript in tqdm(transcripts.items(), desc="Summaries"):
-        summaries[id] = []
+    for id, transcript in tqdm(transcripts.items(), desc="Total"):
+
+        previous_summary: dict = EMPTY_SUMMARY
+
+        modifications: dict[str, list[tuple[int, str]]] = {}
 
         # summarize each page to save on context
-        for page in tqdm(transcript, desc="Progress on transcript"):
+        for page in tqdm(range(len(transcript)), desc="Progress on transcript"):
 
-            page_response: GenerateResponse = generate(
-                model="pageSummarizationModel",
-                prompt=page,
-                stream=False,
-                logprobs=False,
-                think=False
-            )
-            log_output(page_response)
+            last_error: str = None
+            while True:
+                prompt: str = f"TRANSCRIPT:\n{transcript[page]}\n\nPREVIOUS SUMMARY:{json.dumps(previous_summary)}"
 
-            summaries[id].append(page_response.response)
+                if last_error:
+                    prompt += f"\n(Note: avoid the following JSON exception: \"{e}\")"
 
-    for id, transcript in tqdm(transcripts.items(), desc="Postprocessing"):
-        failed: bool = True
-        for i in range(args.retries):
-            
-            coalition_response: GenerateResponse = generate(
-                model="pageCoalitionModel",
-                prompt="\n---NEXT PAGE---\n".join(summaries[id]),
-                stream=False,
-                logprobs=False,
-                think=False,
-                format=MetadataObject.model_json_schema()
-            )
+                page_response: GenerateResponse = generate(
+                    model="pageSummarizationModel",
+                    prompt=prompt,
+                    stream=False,
+                    logprobs=False,
+                    think=False
+                )
+                # log_output(page_response)
 
-
-            with open(args.outdir / f"{id}.json", "w") as f:
-                if not coalition_response.response:
-                    print(f"no response! retrying... ({i+1})")
+                try:
+                    parsed_summary: dict = json.loads(page_response.response)
+                except Exception as e:
+                    print(e)
+                    print("encountered exception! retrying...")
                     continue
 
-                failed = False
+                break
 
-                log_output(coalition_response)
-                print(coalition_response.response, file=f)
+            for key in parsed_summary.keys():
+                if key not in previous_summary:
+                    raise Exception("new key created, not sure how to handle")
+                if parsed_summary[key] != previous_summary[key]:
+                    if key not in modifications:
+                        modifications[key] = []
+                    
+                    modifications[key].append((page, parsed_summary[key]))
 
-            break
+            previous_summary = parsed_summary
+        
+        # print("MODIFICATIONS FOUND:")
+        # print(modifications)
 
-        if failed:
-            with open(args.outdir / f"failed_docs.txt", "a") as f:
-                print(id, file=f)
+        summaries[id] = EMPTY_SUMMARY
+        for key in modifications:
+            # print(f"finding correct {key}...")
+
+            fmt: str = None
+            if key in MetadataObject.model_json_schema()["properties"]:
+                fmt = str(MetadataObject.model_json_schema()["properties"][key])
+            
+            # print(f"detected format {fmt}...")
+
+            prompt = f"Exctract the correct `{key}` with type `{fmt}` from the following pages:\n\n"
+
+            for page, value in modifications[key]:
+
+                prompt += f"PAGE {page}:\n{transcript[page]}\nVALUE FOUND: {value}\n\n"
+
+            while True:
+                decision_response: GenerateResponse = generate(
+                    model="dataDecisionModel",
+                    prompt=prompt,
+                    stream=False,
+                    logprobs=False,
+                    think=True
+                )
+                # log_output(decision_response)
+
+                try:
+                    summaries[id][key] = json.loads(decision_response.response)["response"]
+                except Exception as e:
+                    print(e)
+                    print("encountered exception! retrying...")
+                    continue
+
+                break
+
+        # print("FINAL SUMMARY:")
+        # print(summaries[id])
+
+        with open(args.outdir / f"{id}.json", "w") as f:
+            json.dump(summaries[id], f)
+
+
+    #     if failed:
+    #         with open(args.outdir / f"failed_docs.txt", "a") as f:
+    #             print(id, file=f)
     
     delete("pageSummarizationModel")
-    delete("pageCoalitionModel")
+    delete("dataDecisionModel")
 
 
 if __name__ == "__main__":
