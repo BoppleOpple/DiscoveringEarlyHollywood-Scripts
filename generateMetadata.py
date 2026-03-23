@@ -246,11 +246,20 @@ def main():
     
     summaries: dict[str, list[str]] = {}
 
+    """
+    I'm kind of running out of simple solutions here, but one really in-depth solution could be to
+    take every response, verify that it's a JSON, store every JSON, find the pages that changes
+    occurred to each field, so say the title field changes on pages 1, 13, and 18, then find the
+    pages that they changed on and feed it back into the LLM and say which one of these answers is
+    most correct with the content of each page.
+    """
+
     for id, transcript in tqdm(transcripts.items(), desc="Summaries"):
         summaries[id] = []
 
         # summarize each page to save on context
         for page in tqdm(transcript, desc="Progress on transcript"):
+
             page_response: GenerateResponse = generate(
                 model="pageSummarizationModel",
                 prompt=page,
@@ -285,7 +294,7 @@ def main():
 
                 log_output(coalition_response)
                 print(coalition_response.response, file=f)
-            
+
             break
 
         if failed:
