@@ -7,6 +7,7 @@ import json
 import pathlib
 import pdf2image.pdf2image
 import matplotlib.pyplot as mpl
+import numpy as np
 from tqdm import tqdm
 
 defaultDir = "/mnt/Database Storage/http/capstone"
@@ -22,6 +23,12 @@ def main():
         "-d",
         "--document-dir",
         default=f"{defaultDir}/film_copyright"
+    )
+
+    parser.add_argument(
+        "-o",
+        "--outfile",
+        default=f"out/counts.csv"
     )
 
     args = parser.parse_args()
@@ -51,6 +58,8 @@ def main():
         except Exception as e:
             print(e)
     
+    page_counts, document_counts = np.unique_counts(list(counts.values()))
+
     print("total pages")
     print(sum(counts.values()))
 
@@ -60,6 +69,11 @@ def main():
     mpl.hist(counts.values())
 
     mpl.show()
+
+    with open(args.outfile, "w") as f:
+        f.write("num_documents,page_count\n")
+        for i in range(len(page_counts)):
+            f.write(f"{document_counts[i]},{page_counts[i]}\n")
 
 
 if __name__ == "__main__":

@@ -3,3 +3,4 @@ tqdm   # Progress bars
 pdf2image
 matplotlib
 ollama
+numpy
