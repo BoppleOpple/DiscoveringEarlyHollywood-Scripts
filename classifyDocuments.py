@@ -2,9 +2,11 @@ import argparse
 import csv
 import json
 import math
+import numpy as np
 import os
 import random
 import re
+from matplotlib import plt
 from pathlib import Path
 from tqdm import tqdm
 from pprint import pprint
@@ -22,9 +24,7 @@ any format--i.e. synopsis, sreenplay, script, etc.
 Your goal is to catagorize the document into one of the following categories:
 - synopsis
 - script
-- screenplay
 - other
-- N/A
 
 Reply only with the categorization for the document, e.g. "script".
 """
@@ -131,7 +131,7 @@ def select_files(args: argparse.Namespace) -> list[str]:
 
 def main():
     args = parser.parse_args()
-    
+
     _ollama_client = Client(host=args.ollama_host)
     create(
         model="classificationModel",
@@ -152,7 +152,6 @@ def main():
 
     classifications: dict = {}
 
-
     # import csv if it exists, otherwise create it and its header
     if args.outfile.exists():
         print("importing existing data...")
@@ -169,12 +168,11 @@ def main():
         # skip if already classified
         if id in classifications:
             continue
-        
+
         # skip if unreadable
         if not page_text:
             print(f"document {id} has no text?")
             continue
-        
 
         for i in range(args.retries):
             failed = False
@@ -185,7 +183,7 @@ def main():
                 logprobs=False,
                 think=False
             )
-            
+
             # loop again if no response returned
             if not response.response:
                 print(f"no response! retrying... ({i+1})")
@@ -200,6 +198,89 @@ def main():
         else:
             with open(args.outdir / f"failed_docs.txt", "a") as f:
                 print(id, file=f)
+
+    # get the total number of documents in each category
+    category_dist = np.unique_counts(list(classifications.values()))
+
+    # plot them in a pie chart
+    proportions_fig: plt.Figure = plt.figure()
+    plt.pie(category_dist.counts, labels=category_dist.values)
+    proportions_fig.show()
+
+    # create a mapping from page count to all ids with that number of pages
+    map_pages_to_id: dict[int, list[str]] = {}
+
+    for row in read_csv(args.counts_csv):
+        id: str = row[0]
+        count: int = int(row[1])
+
+        # create a list for the given count and add the id
+        if count not in map_pages_to_id:
+            map_pages_to_id[count] = []
+
+        map_pages_to_id[count].append(id)
+
+    # create a mapping from page count to category tallies
+    map_pages_to_classifications: dict[int, dict[str, int]] = {}
+
+    for page_count, ids in map_pages_to_id.items():
+        group_classifications: list = []
+        for id in ids:
+            if id in classifications:
+                group_classifications.append(classifications[id])
+            else:
+                print(f"could not find id {id}")
+        dist = np.unique_counts(group_classifications)
+
+        map_pages_to_classifications[page_count] = {}
+        for i in range(len(dist.values)):
+            map_pages_to_classifications[page_count][str(dist.values[i])] = dist.counts[i] / len(ids)
+
+    # pprint(map_pages_to_classifications)
+
+    x: np.ndarray = np.array(list(map_pages_to_id.keys()))
+    synopsis_bars: np.ndarray = np.array(
+        [
+            (
+                map_pages_to_classifications[count]["synopsis"]
+                if "synopsis" in map_pages_to_classifications[count]
+                else 0
+            )
+            for count in x
+        ]
+    )
+    script_bars: np.ndarray = np.array(
+        [
+            (
+                map_pages_to_classifications[count]["script"]
+                if "script" in map_pages_to_classifications[count]
+                else 0
+            )
+            for count in x
+        ]
+    )
+    other_bars: np.ndarray = np.array(
+        [
+            (
+                map_pages_to_classifications[count]["other"]
+                if "other" in map_pages_to_classifications[count]
+                else 0
+            )
+            for count in x
+        ]
+    )
+
+    proportions_bar_fig: plt.Figure = plt.figure()
+    plt.bar(x, synopsis_bars, label="synopsis", color="r", width=1)
+    plt.bar(x, script_bars, bottom=synopsis_bars, label="script", color="g", width=1)
+    plt.bar(x, other_bars, bottom=synopsis_bars+script_bars, label="other", color="b", width=1)
+    plt.legend()
+    plt.title("Document Type vs. Document Length")
+    plt.xlabel("Document Length (pages)")
+    plt.ylabel("Distribution of categories (out of 100%)")
+    proportions_bar_fig.show()
+    
+    input()
 
 
 if __name__ == "__main__":

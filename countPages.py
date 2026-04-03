@@ -6,7 +6,7 @@ import re
 import json
 import pathlib
 import pdf2image.pdf2image
-import matplotlib.pyplot as mpl
+from matplotlib import plt
 import numpy as np
 from tqdm import tqdm
 
@@ -66,9 +66,9 @@ def main():
     print("max")
     print(max_id, max_pages)
 
-    mpl.hist(counts.values())
+    plt.hist(counts.values())
 
-    mpl.show()
+    plt.show()
 
     os.makedirs(args.out_dir)
 
