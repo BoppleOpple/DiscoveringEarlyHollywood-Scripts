@@ -70,6 +70,13 @@ parser.add_argument(
     type=int,
 )
 parser.add_argument(
+    "-s",
+    "--seed",
+    required=False,
+    default=None,
+    type=int,
+)
+parser.add_argument(
     "--ollama-host",
     required=False,
     default="http://localhost:11434",
@@ -119,9 +126,11 @@ def select_files(args: argparse.Namespace) -> list[str]:
     return sample
 
 
-def main():
-    args = parser.parse_args()
-    
+def main(*argv: list[str]):
+    args = parser.parse_args(argv if argv else None)
+
+    random.seed(args.seed)
+
     _ollama_client = Client(host=args.ollama_host)
     create(
         model="metadataModel",
