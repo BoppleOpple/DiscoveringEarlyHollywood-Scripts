@@ -143,7 +143,7 @@ def get_transcripts(args: argparse.Namespace) -> dict[str, list[str]]:
 
         num_added_pages: int = page - len(transcripts[id])
         if num_added_pages > 0:
-            transcripts[id].extend([None] * num_added_pages)
+            transcripts[id].extend([""] * num_added_pages)
 
         # add the content to the newly created space
         with open(args.transcript_dir / fname, "r") as f:
