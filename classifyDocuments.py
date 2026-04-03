@@ -186,12 +186,21 @@ def main():
     os.makedirs(args.outfile.parent, exist_ok=True)
 
     classifications: dict = {}
-    if args.outfile.exists():
-        reader: csv.DictReader = csv.reader(f)
 
-        next(reader)
-        for row in reader:
-            classifications[row[0]] = row[1]
+
+    # import csv if it exists, otherwise create it and its header
+    if args.outfile.exists():
+        print("importing existing data...")
+        with open(args.outfile, "r") as f:
+            reader: csv.DictReader = csv.reader(f)
+
+            next(reader)
+            for row in tqdm(reader):
+                classifications[row[0]] = row[1]
+    else:
+        print("output file created")
+        with open(args.outfile, "w") as f:
+            f.write("id,classification\n")
 
     for id, page_text in tqdm(transcripts.items()):
         # skip if already classified
@@ -201,7 +210,7 @@ def main():
         if not page_text:
             print(f"document {id} has no text?")
             continue
-        failed: bool = False
+        
         for i in range(args.retries):
             failed = False
             response: GenerateResponse = generate(
@@ -214,20 +223,17 @@ def main():
 
             if not response.response:
                 print(f"no response! retrying... ({i+1})")
-                failed = True
                 continue
 
             classifications[id] = response.response
             break
 
-        if failed:
+        if id in classifications:
+            with open(args.outfile, "a") as f:
+                f.write(f"{id},{classifications[id]}\n")
+        else:
             with open(args.outdir / f"failed_docs.txt", "a") as f:
                 print(id, file=f)
-    
-    with open(args.outfile, "w") as f:
-        f.write("id,classification\n")
-        for id, response in classifications.items():
-            f.write(f"{id},{response}\n")
 
 
 if __name__ == "__main__":
