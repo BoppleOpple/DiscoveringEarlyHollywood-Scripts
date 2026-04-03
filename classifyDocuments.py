@@ -11,6 +11,8 @@ from pprint import pprint
 from ollama import Client, generate, create, GenerateResponse
 from typing import Literal
 
+from utils import read_csv, get_transcripts, match_transcript, is_valid_page
+
 defaultDir = "/mnt/Database Storage/http/capstone"
 
 SYSTEM_PROMPT = """
@@ -93,14 +95,6 @@ parser.add_argument(
     type=int,
 )
 
-
-def match_transcript(fname: str) -> re.Match | None:
-    return re.fullmatch(r"(\w\d{4}\w\d{5})_p(\d+)\.txt", fname)
-
-def is_valid_page(s: str) -> bool:
-    return match_transcript(s) is not None
-
-
 # select files based on CLI filters
 def select_files(args: argparse.Namespace) -> list[str]:
     files: list[str] = os.listdir(args.transcript_dir)
@@ -122,12 +116,8 @@ def select_files(args: argparse.Namespace) -> list[str]:
 
         page_counts: dict[str, int] = {}
 
-        with open(args.counts_csv, "r") as f:
-            reader: csv.DictReader = csv.reader(f)
-
-            next(reader)
-            for row in reader:
-                page_counts[row[0]] = int(row[1])
+        for row in read_csv(args.counts_csv):
+            page_counts[row[0]] = int(row[1])
 
         ids = tuple(filter(lambda id: args.min_pages <= page_counts[id] and page_counts[id] <= args.max_pages, tqdm(all_ids)))
 
@@ -137,34 +127,6 @@ def select_files(args: argparse.Namespace) -> list[str]:
     # print(sample)
 
     return sample
-
-
-def get_transcripts(args: argparse.Namespace) -> dict[str, list[str]]:
-    # select the files to operate on
-    files: list[str] = select_files(args)
-
-    transcripts: dict[str, list[str]] = dict()
-
-    print("coalescing transcripts...")
-    for fname in tqdm(files):
-        match: re.Match = match_transcript(fname)
-
-        id: str = match.group(1)
-        page: int = int(match.group(2))
-
-        # add entry to the transcript dict if there is none
-        if id not in transcripts:
-            transcripts[id] = []
-
-        num_added_pages: int = page - len(transcripts[id])
-        if num_added_pages > 0:
-            transcripts[id].extend([""] * num_added_pages)
-
-        # add the content to the newly created space
-        with open(args.transcript_dir / fname, "r") as f:
-            transcripts[id][page-1] = f.read()
-
-    return transcripts
 
 
 def main():
@@ -177,10 +139,13 @@ def main():
         system=SYSTEM_PROMPT
     )
 
-    # fetch the relevant transcripts
-    transcripts: dict[str, list[str]] = get_transcripts(args)
+    transcript_files: list[str] = select_files(args)
 
-    # pprint(transcripts.items())
+    # fetch the relevant transcripts
+    transcripts: dict[str, list[str]] = get_transcripts(
+        args.transcript_dir,
+        transcript_files
+    )
 
     # create output directory
     os.makedirs(args.outfile.parent, exist_ok=True)
@@ -191,13 +156,11 @@ def main():
     # import csv if it exists, otherwise create it and its header
     if args.outfile.exists():
         print("importing existing data...")
-        with open(args.outfile, "r") as f:
-            reader: csv.DictReader = csv.reader(f)
 
-            next(reader)
-            for row in tqdm(reader):
-                classifications[row[0]] = row[1]
+        for row in tqdm(read_csv(args.outfile)):
+            classifications[row[0]] = row[1]
     else:
+        # otherwise, create the file with a header row
         print("output file created")
         with open(args.outfile, "w") as f:
             f.write("id,classification\n")
@@ -207,10 +170,12 @@ def main():
         if id in classifications:
             continue
         
+        # skip if unreadable
         if not page_text:
             print(f"document {id} has no text?")
             continue
         
+
         for i in range(args.retries):
             failed = False
             response: GenerateResponse = generate(
@@ -220,7 +185,8 @@ def main():
                 logprobs=False,
                 think=False
             )
-
+            
+            # loop again if no response returned
             if not response.response:
                 print(f"no response! retrying... ({i+1})")
                 continue
