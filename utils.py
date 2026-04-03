@@ -1,4 +1,5 @@
 import csv
+import os
 import re
 from pathlib import Path
 from pprint import pprint
@@ -25,12 +26,18 @@ def read_csv(path: Path, header: bool = True) -> list[list[str] | None]:
         return []
 
 
-def get_transcripts(transcript_dir: Path, files: list[str]) -> dict[str, list[str]]:
+def get_transcripts(transcript_dir: Path, files: list[str] = None) -> dict[str, list[str]]:
+    if not files:
+        files = os.listdir(transcript_dir)
+    
     transcripts: dict[str, list[str]] = dict()
 
     print("coalescing transcripts...")
     for fname in tqdm(files):
         match: re.Match = match_transcript(fname)
+        if not match:
+            print(f"file {fname} does not match format")
+            continue
 
         id: str = match.group(1)
         page: int = int(match.group(2))
