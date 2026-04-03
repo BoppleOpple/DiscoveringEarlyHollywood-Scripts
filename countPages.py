@@ -27,8 +27,8 @@ def main():
 
     parser.add_argument(
         "-o",
-        "--outfile",
-        default=f"out/counts.csv"
+        "--out-dir",
+        default=f"out/page_counts"
     )
 
     args = parser.parse_args()
@@ -70,10 +70,17 @@ def main():
 
     mpl.show()
 
-    with open(args.outfile, "w") as f:
+    os.makedirs(args.out_dir)
+
+    with open(pathlib.Path(args.out_dir) / "dist.csv", "w") as f:
         f.write("num_documents,page_count\n")
         for i in range(len(page_counts)):
             f.write(f"{document_counts[i]},{page_counts[i]}\n")
+
+    with open(pathlib.Path(args.out_dir) / "counts.csv", "w") as f:
+        f.write("id,page_count\n")
+        for id, count in counts.items():
+            f.write(f"{id},{count}\n")
 
 
 if __name__ == "__main__":
