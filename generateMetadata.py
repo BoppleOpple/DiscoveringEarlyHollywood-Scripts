@@ -25,6 +25,18 @@ in a JSON object. For each field, follow the provided schema exactly:
 - series: The name of the series the film is a part of (or null)
 - genres: The list of genres that apply to the film
 - actors: The list of all **actors** (NOT characters) who act in this film
+
+Respond using the following schema:
+{
+  "title": str | null,
+  "reels": int | null,
+  "author": str | null,
+  "director": str | null,
+  "studio": str | null,
+  "series": str | null,
+  "genres": ["action" | "comedy" | "drama" | "horror" | "nonfiction"],
+  "actors": [ str ]
+}
 """
 
 
@@ -160,7 +172,7 @@ def main(*argv: list[str]):
                 stream=False,
                 logprobs=False,
                 think=False,
-                format=MetadataObject.model_json_schema()
+                # format=MetadataObject.model_json_schema()
             )
 
             with open(args.outdir / f"{id}.json", "w") as f:

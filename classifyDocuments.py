@@ -17,22 +17,23 @@ from utils import read_csv, get_transcripts, match_transcript, is_valid_page
 
 defaultDir = "/mnt/Database Storage/http/capstone"
 
-SYSTEM_PROMPT = """
-The user will provide a document describing a film. These documents could be in
-any format--i.e. synopsis, sreenplay, script, etc.
+USER_PROMPT = """
+As a leading historian, you have been provided with a historical document describing a film, and
+you must group it into one of several categories. These documents could be in any format--i.e.
+synopsis, script, etc.
 
 Your goal is to catagorize the document into one of the following categories:
 - synopsis
 - script
 - other
 
-Reply only with the categorization for the document, e.g. "script".
+Reply only with the categorization for the document.
 """
 
 
 parser = argparse.ArgumentParser(
-    prog="python3 generateMetadata.py",
-    description="Generates [count] metadata files for our capstone's dataset",
+    prog="python3 classifyDocuments.py",
+    description="Classifies documents from our capstone's dataset",
     epilog="Copyright Liam Hillery, 2025"
 )
 parser.add_argument(
@@ -133,11 +134,11 @@ def main():
     args = parser.parse_args()
 
     _ollama_client = Client(host=args.ollama_host)
-    create(
-        model="classificationModel",
-        from_=args.model,
-        system=SYSTEM_PROMPT
-    )
+    # create(
+    #     model="classificationModel",
+    #     from_=args.model,
+    #     system=USER_PROMPT
+    # )
 
     transcript_files: list[str] = select_files(args)
 
@@ -177,8 +178,8 @@ def main():
         for i in range(args.retries):
             failed = False
             response: GenerateResponse = generate(
-                model="classificationModel",
-                prompt="\n".join(page_text) + "\n\n" + SYSTEM_PROMPT,
+                model=args.model,
+                prompt="\n".join(page_text) + "\n\n" + USER_PROMPT,
                 stream=False,
                 logprobs=False,
                 think=False
@@ -279,7 +280,7 @@ def main():
     plt.xlabel("Document Length (pages)")
     plt.ylabel("Distribution of categories (out of 100%)")
     proportions_bar_fig.show()
-    
+
     input()
 
 
