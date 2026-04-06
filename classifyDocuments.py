@@ -23,11 +23,10 @@ you must group it into one of several categories. These documents could be in an
 synopsis, script, etc.
 
 Your goal is to catagorize the document into one of the following categories:
-- synopsis
-- script
-- other
+- synopsis (any summary or advertisment of the film)
+- script (any direct copy of the text/lines/content of the film)
 
-Reply only with the categorization for the document.
+Reply only with the categorization for the document (i.e. "script" or "synopsis").
 """
 
 
@@ -67,7 +66,7 @@ parser.add_argument(
     "-m",
     "--model",
     required=False,
-    default="qwen3:8b",
+    default="qwen3.5:latest",
     type=str,
 )
 parser.add_argument(
@@ -165,7 +164,7 @@ def main():
         with open(args.outfile, "w") as f:
             f.write("id,classification\n")
 
-    for id, page_text in tqdm(transcripts.items()):
+    for id, page_text in tqdm(transcripts.items(), smoothing=40/len(transcripts)):
         # skip if already classified
         if id in classifications:
             continue
@@ -260,21 +259,10 @@ def main():
             for count in x
         ]
     )
-    other_bars: np.ndarray = np.array(
-        [
-            (
-                map_pages_to_classifications[count]["other"]
-                if "other" in map_pages_to_classifications[count]
-                else 0
-            )
-            for count in x
-        ]
-    )
 
     proportions_bar_fig: plt.Figure = plt.figure()
     plt.bar(x, synopsis_bars, label="synopsis", color="r", width=1)
     plt.bar(x, script_bars, bottom=synopsis_bars, label="script", color="g", width=1)
-    plt.bar(x, other_bars, bottom=synopsis_bars+script_bars, label="other", color="b", width=1)
     plt.legend()
     plt.title("Document Type vs. Document Length")
     plt.xlabel("Document Length (pages)")
