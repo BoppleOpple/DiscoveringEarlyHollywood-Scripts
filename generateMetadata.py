@@ -14,29 +14,55 @@ from utils import get_transcripts, match_transcript, is_valid_page
 defaultDir = "/mnt/Database Storage/http/capstone"
 
 SYSTEM_PROMPT = """
-Your goal is to extract **exact snippets** from documents in various categories, and to store them
-in a JSON object. For each field, follow the provided schema exactly:
+As a leading historian, you have been provided with a historical document describing a film, and
+you must extract **exact snippets** from documents in various categories. These snippets should be presented
+in a JSON object with the following schema:
 
-- title: The title of the film described in the document (or null)
-- reels: The number of reels described in the document (or null)
-- author: The author of the film (or null)
-- director: The director of the film (or null)
-- studio: The studio responsible for the film (or null)
-- series: The name of the series the film is a part of (or null)
-- genres: The list of genres that apply to the film
-- actors: The list of all **actors** (NOT characters) who act in this film
-
-Respond using the following schema:
 {
   "title": str | null,
+  "producer": str | null,
+  "writer": str | null,
+  "production_company": str | null,
   "reels": int | null,
-  "author": str | null,
-  "director": str | null,
-  "studio": str | null,
+  "is_serial": bool,
   "series": str | null,
   "genres": ["action" | "comedy" | "drama" | "horror" | "nonfiction"],
-  "actors": [ str ]
+  "characters": [
+    {
+      "character_name": str | null,
+      "character_description": str | null,
+      "actor": str | null
+    }
+  ],
+  "locations": [
+    {
+      "location_name": str | null,
+      "location_description": str | null
+    }
+  ]
 }
+
+Here is a description of each field:
+
+- title: The title of the film described in the document (or null)
+- producer: The producer of the film (or null)
+- writer: The writer of the film (or null)
+- production_company: The production company responsible for the film (or null)
+- reels: The number of reels described in the document (or null)
+- is_serial: true if the film is part of a series, false otherwise
+- series: The name of the series the film is a part of (or null if `isSerial` is false)
+- genres: The list of genres that apply to the film
+- characters: The list of all characters present in this film. Each element should have the
+  following fields:
+  - character_name: The name of the character in the described film (or null)
+  - character_description: A brief description of this character (or null)
+  - actor: The name of actor or actress who plays this character (or null)
+- The list of all locations present in this film. Each element should have the
+  following fields:
+  - location_name: The name of the location/setting (or null if no name can be found)
+  - location_description: A brief description of this location (or null)
+
+Respond with ONLY the JSON object.
 """
 
 
@@ -95,15 +121,15 @@ parser.add_argument(
     type=str,
 )
 
-class MetadataObject (BaseModel):
-    title: str | None
-    reels: int | None
-    author: str | None
-    dicrctor: str | None
-    studio: str | None
-    series: str | None
-    genres: list[Literal["action", "comedy", "drama", "horror", "science fiction", "nonfiction", "documentary"]]
-    actors: list[str]
+# class MetadataObject (BaseModel):
+#     title: str | None
+#     reels: int | None
+#     author: str | None
+#     dicrctor: str | None
+#     studio: str | None
+#     series: str | None
+#     genres: list[Literal["action", "comedy", "drama", "horror", "science fiction", "nonfiction", "documentary"]]
+#     actors: list[str]
 
 
 # select files based on CLI filters
@@ -179,11 +205,22 @@ def main(*argv: list[str]):
                 if not response.response:
                     print(f"no response! retrying... ({i+1})")
                     continue
+                
+                # remove markdown if present
+                response_lines: list[str] = response.response.splitlines()
+
+                if response_lines[0].startswith("```"):
+                    response_lines.pop(0)
+                
+                if response_lines[-1].startswith("```"):
+                    response_lines.pop(-1)
+
+                response_text: str = "\n".join(response_lines)
 
                 failed = False
-                print(response.response)
-                print(response.response, file=f)
-            
+                print(response_text)
+                f.write(response_text)
+
             break
 
         if failed:
