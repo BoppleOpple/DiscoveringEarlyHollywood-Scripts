@@ -14,7 +14,7 @@ from utils import get_transcripts, match_transcript, is_valid_page
 defaultDir = "/mnt/Database Storage/http/capstone"
 
 SYSTEM_PROMPT = """
-Your goal is to extract **exact smippets** from documents in various categories, and to store them
+Your goal is to extract **exact snippets** from documents in various categories, and to store them
 in a JSON object. For each field, follow the provided schema exactly:
 
 - title: The title of the film described in the document (or null)

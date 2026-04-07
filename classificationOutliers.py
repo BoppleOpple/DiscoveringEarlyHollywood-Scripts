@@ -159,6 +159,32 @@ def main():
     plt.ylabel("Distribution of categories (out of 100%)")
     proportions_bar_fig.show()
 
+
+    ids: set = set(page_counts.keys()).intersection(classifications.keys())
+
+    synopsis_ids: list = list(filter(lambda id: classifications[id] == "synopsis", tqdm(ids)))
+    script_ids: list = list(filter(lambda id: classifications[id] == "script", tqdm(ids)))
+
+    def _page_length(id: str) -> int:
+        return page_counts[id]
+
+    synopsis_ids.sort(key=_page_length, reverse=True)
+    script_ids.sort(key=_page_length)
+
+    print("Top 50 longest synopses:")
+    with open(args.out_dir / "synopsis_outliers.txt", "w") as f:
+        for id in synopsis_ids[:50]:
+            f.write(id + "\n")
+            print(f"{id} - {page_counts[id]}")
+    print()
+
+    print("Top 50 shortest scripts:")
+    with open(args.out_dir / "script_outliers.txt", "w") as f:
+        for id in script_ids[:50]:
+            f.write(id + "\n")
+            print(f"{id} - {page_counts[id]}")
+    print()
+
     input()
 
 
