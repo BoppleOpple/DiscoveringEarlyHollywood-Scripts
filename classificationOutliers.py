@@ -128,7 +128,7 @@ def main():
         for i in range(len(dist.values)):
             map_pages_to_classifications[page_count][str(dist.values[i])] = dist.counts[i] / len(ids)
 
-    x: np.ndarray = np.array(list(map_pages_to_id.keys()))
+    x: np.ndarray = np.array(sorted(map_pages_to_id.keys()))
     synopsis_bars: np.ndarray = np.array(
         [
             (
@@ -151,12 +151,14 @@ def main():
     )
 
     proportions_bar_fig: plt.Figure = plt.figure()
-    plt.bar(x, synopsis_bars, label="synopsis", color="r", width=1)
-    plt.bar(x, script_bars, bottom=synopsis_bars, label="script", color="g", width=1)
+    # plt.plot(x, synopsis_bars, label="synopsis", color="r")
+    # plt.plot(x, script_bars, label="script", color="b")
+    plt.bar(x, synopsis_bars, label="synopsis", color="#8C0000", width=1)
+    plt.bar(x, script_bars, bottom=synopsis_bars, label="script", color="#1F77B4", width=1)
     plt.legend()
-    plt.title("Document Type vs. Document Length")
-    plt.xlabel("Document Length (pages)")
-    plt.ylabel("Distribution of categories (out of 100%)")
+    plt.title("Document Type vs. Document Length", size="x-large")
+    plt.xlabel("Document Length (pages)", size="x-large")
+    plt.ylabel("Distribution of categories (out of 100%)", size="x-large")
     proportions_bar_fig.show()
 
 
