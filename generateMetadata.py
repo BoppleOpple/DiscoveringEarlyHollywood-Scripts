@@ -65,6 +65,11 @@ Here is a description of each field:
 Respond with ONLY the JSON object.
 """
 
+generate_arguments = {
+    "think": False,
+    # "format": MetadataObject.model_json_schema()
+}
+
 
 parser = argparse.ArgumentParser(
     prog="python3 generateMetadata.py",
@@ -197,8 +202,7 @@ def main(*argv: list[str]):
                 prompt="\n".join(page_text),
                 stream=False,
                 logprobs=False,
-                think=False,
-                # format=MetadataObject.model_json_schema()
+                **generate_arguments
             )
 
             with open(args.outdir / f"{id}.json", "w") as f:
@@ -218,7 +222,7 @@ def main(*argv: list[str]):
                 response_text: str = "\n".join(response_lines)
 
                 failed = False
-                print(response_text)
+                # print(response_text)
                 f.write(response_text)
 
             break
