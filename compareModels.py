@@ -19,39 +19,51 @@ if __name__ == "__main__":
                 "think": False
             }
         },
+        # {
+        #     "name": "qwen3:latest",
+        #     "args": {
+        #         "think": True
+        #     }
+        # },
+        # {
+        #     "name": "qwen3.5:latest",
+        #     "args": {
+        #         "think": False
+        #     }
+        # },
+        # {
+        #     "name": "qwen3.5:latest",
+        #     "args": {
+        #         "think": True
+        #     }
+        # },
         {
-            "name": "qwen3:latest",
-            "args": {
-                "think": True
-            }
-        },
-        {
-            "name": "qwen3.5:latest",
+            "name": "gemma4:latest",
             "args": {
                 "think": False
             }
         },
-        {
-            "name": "qwen3.5:latest",
-            "args": {
-                "think": True
-            }
-        },
-        {
-            "name": "gemma4:latest",
-            "args": {
-                "think": False
-            }
-        },
-        {
-            "name": "gemma4:latest",
-            "args": {
-                "think": True
-            }
-        },
-        {
-            "name": "mistral-small3.2:latest"
-        },
+        # {
+        #     "name": "gemma4:latest",
+        #     "args": {
+        #         "think": True
+        #     }
+        # },
+        # {
+        #     "name": "gemma4:26b",
+        #     "args": {
+        #         "think": False
+        #     }
+        # },
+        # {
+        #     "name": "gemma4:26b",
+        #     "args": {
+        #         "think": True
+        #     }
+        # },
+        # {
+        #     "name": "mistral-small3.2:latest"
+        # },
     ]
 
     default_args: dict = generateMetadata.generate_arguments

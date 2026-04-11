@@ -29,8 +29,8 @@ in a JSON object with the following schema:
   "genres": ["action" | "comedy" | "drama" | "horror" | "nonfiction"],
   "characters": [
     {
-      "character_name": str | null,
       "character_description": str | null,
+      "character_name": str | null,
       "actor": str | null
     }
   ],
@@ -54,8 +54,9 @@ Here is a description of each field:
 - genres: The list of genres that apply to the film
 - characters: The list of all characters present in this film. Each element should have the
   following fields:
+  - character_description: A brief description of this character, including their name (i.e.
+    "<character name> does [...]") (or null)
   - character_name: The name of the character in the described film (or null)
-  - character_description: A brief description of this character (or null)
   - actor: The name of actor or actress who plays this character (or null)
 - The list of all locations present in this film. Each element should have the
   following fields:
@@ -93,10 +94,10 @@ parser.add_argument(
 )
 parser.add_argument(
     "-i",
-    "--id",
+    "--id-file",
     required=False,
     default=None,
-    type=str,
+    type=Path,
 )
 parser.add_argument(
     "-m",
@@ -126,16 +127,6 @@ parser.add_argument(
     type=str,
 )
 
-# class MetadataObject (BaseModel):
-#     title: str | None
-#     reels: int | None
-#     author: str | None
-#     dicrctor: str | None
-#     studio: str | None
-#     series: str | None
-#     genres: list[Literal["action", "comedy", "drama", "horror", "science fiction", "nonfiction", "documentary"]]
-#     actors: list[str]
-
 
 # select files based on CLI filters
 def select_files(args: argparse.Namespace) -> list[str]:
@@ -151,8 +142,9 @@ def select_files(args: argparse.Namespace) -> list[str]:
 
     ids: tuple[str] = None
 
-    if args.id:
-        ids = (args.id,)
+    if args.id_file and args.id_file.exists():
+        with open(args.id_file, "r") as f:
+            ids = tuple(line.strip() for line in f.readlines() if line.strip() != "")
     else:
         all_ids = [match_transcript(s).group(1) for s in valid_pages]
 
@@ -195,6 +187,9 @@ def main(*argv: list[str]):
     os.makedirs(args.outdir, exist_ok=True)
 
     for id, page_text in tqdm(transcripts.items()):
+        if (args.outdir / f"{id}.json").exists():
+            continue
+
         failed: bool = True
         for i in range(args.retries):
             response: GenerateResponse = generate(
