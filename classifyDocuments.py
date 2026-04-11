@@ -17,22 +17,22 @@ from utils import read_csv, get_transcripts, match_transcript, is_valid_page
 
 defaultDir = "/mnt/Database Storage/http/capstone"
 
-SYSTEM_PROMPT = """
-The user will provide a document describing a film. These documents could be in
-any format--i.e. synopsis, sreenplay, script, etc.
+USER_PROMPT = """
+As a leading historian, you have been provided with a historical document describing a film, and
+you must group it into one of several categories. These documents could be in any format--i.e.
+synopsis, script, etc.
 
 Your goal is to catagorize the document into one of the following categories:
-- synopsis
-- script
-- other
+- synopsis (any summary or advertisment of the film)
+- script (any direct copy of the text/lines/content of the film)
 
-Reply only with the categorization for the document, e.g. "script".
+Reply only with the categorization for the document (i.e. "script" or "synopsis").
 """
 
 
 parser = argparse.ArgumentParser(
-    prog="python3 generateMetadata.py",
-    description="Generates [count] metadata files for our capstone's dataset",
+    prog="python3 classifyDocuments.py",
+    description="Classifies documents from our capstone's dataset",
     epilog="Copyright Liam Hillery, 2025"
 )
 parser.add_argument(
@@ -66,7 +66,7 @@ parser.add_argument(
     "-m",
     "--model",
     required=False,
-    default="qwen3:8b",
+    default="qwen3.5:latest",
     type=str,
 )
 parser.add_argument(
@@ -133,11 +133,11 @@ def main():
     args = parser.parse_args()
 
     _ollama_client = Client(host=args.ollama_host)
-    create(
-        model="classificationModel",
-        from_=args.model,
-        system=SYSTEM_PROMPT
-    )
+    # create(
+    #     model="classificationModel",
+    #     from_=args.model,
+    #     system=USER_PROMPT
+    # )
 
     transcript_files: list[str] = select_files(args)
 
@@ -164,7 +164,7 @@ def main():
         with open(args.outfile, "w") as f:
             f.write("id,classification\n")
 
-    for id, page_text in tqdm(transcripts.items()):
+    for id, page_text in tqdm(transcripts.items(), smoothing=40/len(transcripts)):
         # skip if already classified
         if id in classifications:
             continue
@@ -177,8 +177,8 @@ def main():
         for i in range(args.retries):
             failed = False
             response: GenerateResponse = generate(
-                model="classificationModel",
-                prompt="\n".join(page_text) + "\n\n" + SYSTEM_PROMPT,
+                model=args.model,
+                prompt="\n".join(page_text) + "\n\n" + USER_PROMPT,
                 stream=False,
                 logprobs=False,
                 think=False
@@ -198,90 +198,6 @@ def main():
         else:
             with open(args.outdir / f"failed_docs.txt", "a") as f:
                 print(id, file=f)
-
-    # get the total number of documents in each category
-    category_dist = np.unique_counts(list(classifications.values()))
-
-    # plot them in a pie chart
-    proportions_fig: plt.Figure = plt.figure()
-    plt.pie(category_dist.counts, labels=category_dist.values)
-    proportions_fig.show()
-
-    # create a mapping from page count to all ids with that number of pages
-    map_pages_to_id: dict[int, list[str]] = {}
-
-    for row in read_csv(args.counts_csv):
-        id: str = row[0]
-        count: int = int(row[1])
-
-        # create a list for the given count and add the id
-        if count not in map_pages_to_id:
-            map_pages_to_id[count] = []
-
-        map_pages_to_id[count].append(id)
-
-    # create a mapping from page count to category tallies
-    map_pages_to_classifications: dict[int, dict[str, int]] = {}
-
-    for page_count, ids in map_pages_to_id.items():
-        group_classifications: list = []
-        for id in ids:
-            if id in classifications:
-                group_classifications.append(classifications[id])
-            else:
-                print(f"could not find id {id}")
-        dist = np.unique_counts(group_classifications)
-
-        map_pages_to_classifications[page_count] = {}
-        for i in range(len(dist.values)):
-            map_pages_to_classifications[page_count][str(dist.values[i])] = dist.counts[i] / len(ids)
-
-    # pprint(map_pages_to_classifications)
-
-    x: np.ndarray = np.array(list(map_pages_to_id.keys()))
-    synopsis_bars: np.ndarray = np.array(
-        [
-            (
-                map_pages_to_classifications[count]["synopsis"]
-                if "synopsis" in map_pages_to_classifications[count]
-                else 0
-            )
-            for count in x
-        ]
-    )
-    script_bars: np.ndarray = np.array(
-        [
-            (
-                map_pages_to_classifications[count]["script"]
-                if "script" in map_pages_to_classifications[count]
-                else 0
-            )
-            for count in x
-        ]
-    )
-    other_bars: np.ndarray = np.array(
-        [
-            (
-                map_pages_to_classifications[count]["other"]
-                if "other" in map_pages_to_classifications[count]
-                else 0
-            )
-            for count in x
-        ]
-    )
-
-    proportions_bar_fig: plt.Figure = plt.figure()
-    plt.bar(x, synopsis_bars, label="synopsis", color="r", width=1)
-    plt.bar(x, script_bars, bottom=synopsis_bars, label="script", color="g", width=1)
-    plt.bar(x, other_bars, bottom=synopsis_bars+script_bars, label="other", color="b", width=1)
-    plt.legend()
-    plt.title("Document Type vs. Document Length")
-    plt.xlabel("Document Length (pages)")
-    plt.ylabel("Distribution of categories (out of 100%)")
-    proportions_bar_fig.show()
-    
-    input()
-
 
 if __name__ == "__main__":
     main()

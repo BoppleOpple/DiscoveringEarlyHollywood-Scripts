@@ -14,18 +14,62 @@ from utils import get_transcripts, match_transcript, is_valid_page
 defaultDir = "/mnt/Database Storage/http/capstone"
 
 SYSTEM_PROMPT = """
-Your goal is to extract **exact smippets** from documents in various categories, and to store them
-in a JSON object. For each field, follow the provided schema exactly:
+As a leading historian, you have been provided with a historical document describing a film, and
+you must extract **exact snippets** from documents in various categories. These snippets should be presented
+in a JSON object with the following schema:
+
+{
+  "title": str | null,
+  "producer": str | null,
+  "writer": str | null,
+  "production_company": str | null,
+  "reels": int | null,
+  "is_serial": bool,
+  "series": str | null,
+  "genres": ["action" | "comedy" | "drama" | "horror" | "nonfiction"],
+  "characters": [
+    {
+      "character_description": str | null,
+      "character_name": str | null,
+      "actor": str | null
+    }
+  ],
+  "locations": [
+    {
+      "location_name": str | null,
+      "location_description": str | null
+    }
+  ]
+}
+
+Here is a description of each field:
 
 - title: The title of the film described in the document (or null)
+- producer: The producer of the film (or null)
+- writer: The writer of the film (or null)
+- production_company: The production company responsible for the film (or null)
 - reels: The number of reels described in the document (or null)
-- author: The author of the film (or null)
-- director: The director of the film (or null)
-- studio: The studio responsible for the film (or null)
-- series: The name of the series the film is a part of (or null)
+- is_serial: true if the film is part of a series, false otherwise
+- series: The name of the series the film is a part of (or null if `isSerial` is false)
 - genres: The list of genres that apply to the film
-- actors: The list of all **actors** (NOT characters) who act in this film
+- characters: The list of all characters present in this film. Each element should have the
+  following fields:
+  - character_description: A brief description of this character, including their name (i.e.
+    "<character name> does [...]") (or null)
+  - character_name: The name of the character in the described film (or null)
+  - actor: The name of actor or actress who plays this character (or null)
+- The list of all locations present in this film. Each element should have the
+  following fields:
+  - location_name: The name of the location/setting (or null if no name can be found)
+  - location_description: A brief description of this location (or null)
+
+Respond with ONLY the JSON object.
 """
+
+generate_arguments = {
+    "think": False,
+    # "format": MetadataObject.model_json_schema()
+}
 
 
 parser = argparse.ArgumentParser(
@@ -50,10 +94,10 @@ parser.add_argument(
 )
 parser.add_argument(
     "-i",
-    "--id",
+    "--id-file",
     required=False,
     default=None,
-    type=str,
+    type=Path,
 )
 parser.add_argument(
     "-m",
@@ -70,21 +114,18 @@ parser.add_argument(
     type=int,
 )
 parser.add_argument(
+    "-s",
+    "--seed",
+    required=False,
+    default=None,
+    type=int,
+)
+parser.add_argument(
     "--ollama-host",
     required=False,
     default="http://localhost:11434",
     type=str,
 )
-
-class MetadataObject (BaseModel):
-    title: str | None
-    reels: int | None
-    author: str | None
-    dicrctor: str | None
-    studio: str | None
-    series: str | None
-    genres: list[Literal["action", "comedy", "drama", "horror", "science fiction", "nonfiction", "documentary"]]
-    actors: list[str]
 
 
 # select files based on CLI filters
@@ -101,8 +142,9 @@ def select_files(args: argparse.Namespace) -> list[str]:
 
     ids: tuple[str] = None
 
-    if args.id:
-        ids = (args.id,)
+    if args.id_file and args.id_file.exists():
+        with open(args.id_file, "r") as f:
+            ids = tuple(line.strip() for line in f.readlines() if line.strip() != "")
     else:
         all_ids = [match_transcript(s).group(1) for s in valid_pages]
 
@@ -119,9 +161,11 @@ def select_files(args: argparse.Namespace) -> list[str]:
     return sample
 
 
-def main():
-    args = parser.parse_args()
-    
+def main(*argv: list[str]):
+    args = parser.parse_args(argv if argv else None)
+
+    random.seed(args.seed)
+
     _ollama_client = Client(host=args.ollama_host)
     create(
         model="metadataModel",
@@ -143,6 +187,9 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
 
     for id, page_text in tqdm(transcripts.items()):
+        if (args.outdir / f"{id}.json").exists():
+            continue
+
         failed: bool = True
         for i in range(args.retries):
             response: GenerateResponse = generate(
@@ -150,19 +197,29 @@ def main():
                 prompt="\n".join(page_text),
                 stream=False,
                 logprobs=False,
-                think=False,
-                format=MetadataObject.model_json_schema()
+                **generate_arguments
             )
 
             with open(args.outdir / f"{id}.json", "w") as f:
                 if not response.response:
                     print(f"no response! retrying... ({i+1})")
                     continue
+                
+                # remove markdown if present
+                response_lines: list[str] = response.response.splitlines()
+
+                if response_lines[0].startswith("```"):
+                    response_lines.pop(0)
+                
+                if response_lines[-1].startswith("```"):
+                    response_lines.pop(-1)
+
+                response_text: str = "\n".join(response_lines)
 
                 failed = False
-                print(response.response)
-                print(response.response, file=f)
-            
+                # print(response_text)
+                f.write(response_text)
+
             break
 
         if failed:
